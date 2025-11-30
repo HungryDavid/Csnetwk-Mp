@@ -140,7 +140,7 @@ public class PokeProtocolHandler implements PokeTransportLayer.MessageListener {
         int enemyHP = Integer.parseInt(f.get("defender_hp_remaining"));
 
         if (enemyDamage == lastDamageThisTurn && enemyHP == lastEnemyHPRemaining) {
-            String msg = "message_typeL CALCULATION CONFIRM\n" + nextSeq();
+            String msg = "message_type: CALCULATION CONFIRM\n" + nextSeq();
             send(msg);
             state = State.READY_TO_ATTACK;
         } else {
@@ -169,6 +169,7 @@ public class PokeProtocolHandler implements PokeTransportLayer.MessageListener {
                 "communication_mode: P2P\n" +
                 "pokemon_name: " + myPokemon.name + "\n" +
                 "stat_boosts: {\"special_attack_uses\":5, \"special_defense_uses\":5}\n";
+        send(msg);
     }
 
     public void attack (String moveName) {
