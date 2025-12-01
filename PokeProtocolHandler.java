@@ -162,8 +162,6 @@ public class PokeProtocolHandler {
         
         currentState = State.AWAITING_RESOLUTION;
     }
-    
-    // In PokeProtocolHandler.java
 
 private void handleBattleSetup(String opponentName, String opponentStats, String spAttackBoosts, String spDefenseBoosts) {
     this.opponentPokemon = pokemonDB.get(opponentName);
@@ -171,14 +169,8 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
          throw new RuntimeException("Opponent Pokemon not found!: " + opponentName);
     }
     
-    // --- FIX START: Parse and Apply Opponent Stats ---
     String[] stats = opponentStats.split(",");
-    
-    // We expect 6 stats: maxHp, attack, defense, spAttack, spDefense, speed
     if (stats.length == 6) {
-        // Since the opponent is sending its CURRENT stats, apply them
-        // Note: The stats string should ideally contain the MAX HP, not current HP,
-        // but based on your protocol, we'll parse and use it here.
         
         int maxHp = Integer.parseInt(stats[0]);
         int attack = Integer.parseInt(stats[1]);
@@ -187,9 +179,8 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
         int spDefense = Integer.parseInt(stats[4]);
         int speed = Integer.parseInt(stats[5]);
         
-        // Update opponentPokemon object with the received stats
         this.opponentPokemon.maxHp = maxHp;
-        this.opponentPokemon.hp = maxHp; // Assume opponent starts at full HP
+        this.opponentPokemon.hp = maxHp;
         this.opponentPokemon.attack = attack;
         this.opponentPokemon.defense = defense;
         this.opponentPokemon.spAttack = spAttack;
@@ -199,7 +190,6 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
     } else {
         System.err.println("[Error] Received invalid number of stats for opponent: " + opponentStats);
     }
-    // --- FIX END ---
     
     if (isServer && currentState == State.AWAITING_RESOLUTION) {
         currentState = State.READY_TO_ATTACK;
@@ -216,7 +206,6 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
             return;
         }
         
-        // FIX: Using top-level Move class
         Move move = myPokemon.getMove(moveName);
         if (move == null) {
              System.out.println("[Error] Move not found: " + moveName);
@@ -308,8 +297,6 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
         }
         
         int announcedDamage = Integer.parseInt(damageStr);
-        
-        // FIX: Using top-level Move class
         Move move = opponentPokemon.getMove(moveName);
         
         int myCalculatedDamage = calculateDamage(move, opponentPokemon, myPokemon, isSpecialAttackActive, isSpecialDefenseActive);
@@ -366,8 +353,7 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
             }
         }
     }
-
-    // FIX: Changed Pokemon.Move to Move
+    
     private int calculateDamage(Move move, Pokemon attacker, Pokemon defender, boolean spAttackBoost, boolean spDefenseBoost) {
         double basePower = move.getBasePower();
         double attackStat;
@@ -377,7 +363,7 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
         if ("physical".equalsIgnoreCase(move.getCategory())) {
             attackStat = attacker.getAttack();
             defenseStat = defender.getDefense();
-        } else { // "special"
+        } else { 
             attackStat = attacker.getSpAttack();
             defenseStat = defender.getSpDefense();
             
@@ -414,4 +400,5 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
         }
         System.out.print("> ");
     }
+
 }
