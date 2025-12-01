@@ -1,146 +1,137 @@
+import java.io.IOException;
 import java.net.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PokeTransportLayer {
-  private DatagramSocket socket;
-  private int currentSequence = 0;
-  private Map<Integer, String> awaitingAck = new HashMap<>(); // waits for ack number
-  private Map<Integer, Long> sendTime = new HashMap<>();
-  private Map<Integer, Integer> retryCount = new HashMap<>();
-  private static final int TIMEOUT_MS = 500;
-  private static final int MAX_RETRIES = 3;
-  private MessageListener listener;
-  private Map<Integer, InetAddress> destIp = new HashMap<>();
-  private Map<Integer, Integer> destPort = new HashMap<>();
+    private static final int RETRANSMISSION_TIMEOUT_MS = 500;
+    private static final int MAX_PACKET_SIZE = 1024;
+    private static final int LISTEN_TIMEOUT_MS = 100;
 
-  public PokeTransportLayer(int port) throws Exception {
-    socket = new DatagramSocket(port);
-  }
-  
-  public interface MessageListener {
-    void onMessageReceived(String rawMessage, int seq, InetAddress ip, int port);
-  }
+    private DatagramSocket socket;
+    private PokeProtocolHandler handler;
+    private final Map<Integer, PacketInfo> unackedMessages = new ConcurrentHashMap<>();
+    private int mySeq = 0;
+    private int peerSeq = -1;
 
-  public void setListener(MessageListener l) {
-    this.listener = l;
-  }
+    private class PacketInfo {
+        final byte[] data;
+        final InetAddress address;
+        final int port;
+        long timestamp;
+        int sequence;
 
-  public void sendReliableMessage(String message, InetAddress ip, int port) throws Exception {
-    int seq = currentSequence++;
-
-    String msgWithSeq = message + "\nsequence_number: " + seq;
-
-    byte[] data = msgWithSeq.getBytes();
-    DatagramPacket packet = new DatagramPacket(data, data.length, ip, port);
-    socket.send(packet);
-
-    awaitingAck.put(seq, msgWithSeq);
-    sendTime.put(seq, System.currentTimeMillis());
-    retryCount.put(seq, 0);
-
-    destIp.put(seq, ip); // store the destination
-    destPort.put(seq, port);
-  }
-
-  public void sendAck(int ackNum, InetAddress ip, int port) throws Exception {
-    String ack = "message_type: ACK\nack_number: " + ackNum;
-    byte[] data = ack.getBytes();
-    DatagramPacket packet = new DatagramPacket(data, data.length, ip, port);
-    socket.send(packet);
-  }
-
-  public void listen() throws Exception {
-    byte[] buffer = new byte[4096];
-
-    while (true) {
-      DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-      socket.receive(packet);
-
-      String received = new String(packet.getData(), 0, packet.getLength());
-      handleIncomingPacket(received, packet.getAddress(), packet.getPort());
-    }
-  }
-
-  private void handleIncomingPacket(String msg, InetAddress ip, int port) throws Exception {
-    if (msg.startsWith("message_type: ACK")) {// if ack is recieved
-      int ackNum = extractAckNumber(msg);
-      awaitingAck.remove(ackNum);
-      sendTime.remove(ackNum);
-      retryCount.remove(ackNum);
-      return;
-    }
-   
-    int seqNum = extractSequenceNumber(msg); // extract sequence number
-
-    sendAck(seqNum, ip, port); // send ack back
-
-    if (listener != null) {//if not null then pass to protocol layer
-      listener.onMessageReceived(msg, seqNum, ip, port);
-    }
-  }
-
-  private int extractAckNumber(String msg) {
-    for (String line : msg.split("\n")) {
-      if (line.startsWith("ack_number:")) {
-        return Integer.parseInt(line.split(":")[1].trim());
-      }
-    }
-    return -1;
-  }
-
-  private int extractSequenceNumber(String msg) {
-    for (String line : msg.split("\n")) {
-      if (line.startsWith("sequence_number:")) {
-        return Integer.parseInt(line.split(":")[1].trim());
-      }
-    }
-    return -1;
-  }
-
-  public void retransmissionLoop() throws Exception { // run function on a exclusive thread
-    while (true) {
-      long now = System.currentTimeMillis();
-      for (int seq : new ArrayList<>(awaitingAck.keySet())) {
-        long lastSent = sendTime.get(seq);
-        int retries = retryCount.get(seq);
-        if (now - lastSent >= TIMEOUT_MS) {
-          if (retries >= MAX_RETRIES) {
-            System.out.println("FAILED: seq " + seq + " dropped after max retries.");
-            awaitingAck.remove(seq);
-            retryCount.remove(seq);
-            sendTime.remove(seq);
-            continue;
-          }
-
-          // resend the message
-          String msg = awaitingAck.get(seq);
-          InetAddress ip = destIp.get(seq);
-          int port = destPort.get(seq);
-
-          byte[] data = msg.getBytes();
-          DatagramPacket packet = new DatagramPacket(data, data.length, ip, port);
-          socket.send(packet);
-
-          System.out.println("Retransmitting seq " + seq);
-
-          if (retries >= MAX_RETRIES) { // remove message if max entry is reached
-            System.out.println("FAILED: seq " + seq + " dropped after max retries.");
-            awaitingAck.remove(seq);
-            retryCount.remove(seq);
-            sendTime.remove(seq);
-            destIp.remove(seq);
-            destPort.remove(seq);
-            continue;
-          }
-
-          sendTime.put(seq, now);
-          retryCount.put(seq, retries + 1);
+        PacketInfo(byte[] data, InetAddress address, int port, int sequence) {
+            this.data = data;
+            this.address = address;
+            this.port = port;
+            this.sequence = sequence;
+            this.timestamp = System.currentTimeMillis();
         }
-      }
-
-      Thread.sleep(50);
     }
-  }
 
+    public PokeTransportLayer(int port) throws SocketException {
+        this.socket = new DatagramSocket(port);
+        this.socket.setSoTimeout(LISTEN_TIMEOUT_MS);
+        System.out.println("[Transport] Listening on port: " + this.socket.getLocalPort());
+    }
+
+    public void setHandler(PokeProtocolHandler handler) {
+        this.handler = handler;
+    }
+
+    private void send(byte[] data, InetAddress address, int port) throws IOException {
+        DatagramPacket packet = new DatagramPacket(data, data.length, address, port);
+        socket.send(packet);
+    }
+
+    private void sendAck(int seq, InetAddress address, int port) throws IOException {
+        String ackMessage = "ACK|" + seq;
+        send(ackMessage.getBytes(), address, port);
+    }
+
+    public void sendReliableMessage(String messageBody, InetAddress address, int port) throws IOException {
+        int currentSeq = mySeq++;
+        String fullMessage = "DATA|" + currentSeq + "|" + messageBody;
+        byte[] data = fullMessage.getBytes();
+
+        PacketInfo info = new PacketInfo(data, address, port, currentSeq);
+        unackedMessages.put(currentSeq, info);
+
+        send(data, address, port);
+    }
+
+    public void retransmissionLoop() {
+        while (true) {
+            try {
+                long now = System.currentTimeMillis();
+                Iterator<Map.Entry<Integer, PacketInfo>> iterator = unackedMessages.entrySet().iterator();
+
+                while (iterator.hasNext()) {
+                    PacketInfo info = iterator.next().getValue();
+                    if (now - info.timestamp > RETRANSMISSION_TIMEOUT_MS) {
+                        System.out.println("[Transport] Retransmitting sequence: " + info.sequence);
+                        // Update timestamp and resend
+                        info.timestamp = now;
+                        send(info.data, info.address, info.port);
+                    }
+                }
+                Thread.sleep(RETRANSMISSION_TIMEOUT_MS / 4); // Check frequently
+            } catch (SocketException e) {
+                // Socket closed, exit loop
+                break;
+            } catch (Exception e) {
+                System.err.println("[Transport] Retransmission error: " + e.getMessage());
+            }
+        }
+    }
+
+// --- Listening Method ---
+
+    public void listen() throws Exception {
+        byte[] buffer = new byte[MAX_PACKET_SIZE];
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+        while (true) {
+            try {
+                socket.receive(packet);
+                String rawMessage = new String(packet.getData(), 0, packet.getLength());
+                InetAddress peerIP = packet.getAddress();
+                int peerPort = packet.getPort();
+
+                handleIncomingMessage(rawMessage, peerIP, peerPort);
+            } catch (SocketTimeoutException ignored) {
+            } catch (SocketException e) {
+                break;
+            } catch (IOException e) {
+                System.err.println("[Transport] Listen error: " + e.getMessage());
+            }
+        }
+    }
+
+    private void handleIncomingMessage(String rawMessage, InetAddress ip, int port) throws IOException {
+        String[] parts = rawMessage.split("\\|", 3);
+        String type = parts[0];
+        if (handler == null) return; 
+
+        if ("ACK".equals(type) && parts.length >= 2) {
+            int seq = Integer.parseInt(parts[1]);
+            if (unackedMessages.remove(seq) != null) {
+                System.out.println("[Transport] ACK received for sequence: " + seq);
+            }
+        } else if ("DATA".equals(type) && parts.length >= 3) {
+            int seq = Integer.parseInt(parts[1]);
+            String messageBody = parts[2];
+            sendAck(seq, ip, port);
+            
+            if (seq > peerSeq) {
+                handler.onMessageReceived(messageBody, seq, ip, port);
+                peerSeq = seq; 
+            } else if (seq == peerSeq) {
+                 System.out.println("[Transport] Duplicate data packet received (Seq: " + seq + "). Dropped message body.");
+            } else {
+                 System.out.println("[Transport] Out-of-order data packet received (Seq: " + seq + "). Dropped message body.");
+            }
+        }
+    }
 }
-

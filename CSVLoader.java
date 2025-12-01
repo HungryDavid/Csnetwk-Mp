@@ -65,7 +65,7 @@ public class CSVLoader {
                 p.addMove(new Move("Power Hit", 75, "physical", "Normal"));
                 p.addMove(new Move("Neutral Burst", 50, "special", "Normal"));
 
-                out.put(name, p);
+                out.put(name.toUpperCase(), p);
             }
         }
         return out;

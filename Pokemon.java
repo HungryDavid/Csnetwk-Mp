@@ -13,13 +13,18 @@ public class Pokemon {
     public String type2;
     public boolean isLegendary = false;
     public Map<String, Double> against = new HashMap<>();
-    public Map<String, Move> moves = new LinkedHashMap<>();
+    public Map<String, Move> moves = new LinkedHashMap<>(); 
+    
     public String abilitiesRaw = "";
+    public int spAttackBoostsRemaining = 5;
+    public int spDefenseBoostsRemaining = 5;
 
     public Pokemon (String name, int hp, int attack, int defense, int spAttack, int spDefense,
                     int speed, String type1, String type2) {
         this.name = name;
-        this.maxHp = this.hp - hp;
+        this.hp = hp;
+        this.maxHp = hp; 
+        
         this.attack = attack;
         this.defense = defense;
         this.spAttack = spAttack;
@@ -35,8 +40,34 @@ public class Pokemon {
         }
     }
 
-    public void addMove(Move m) {
-        moves.put(m.name, m);
+    public void addMove(Move m) { 
+        moves.put(m.name.toUpperCase(), m); 
+    }
+    public String getName() { 
+        return name; 
+    }
+    public int getHp() { 
+        return hp; 
+    }
+    public void setHp(int hp) { 
+        this.hp = hp; 
+    }
+    public int getAttack() { return attack; }
+    public int getDefense() { return defense; }
+    public int getSpAttack() { return spAttack; }
+    public int getSpDefense() { return spDefense; }
+    public String getType1() { return type1; }
+    public String getType2() { return type2; }
+    public Move getMove(String moveName) { 
+        return moves.get(moveName.toUpperCase()); 
+    } 
+
+    public String getStatsString() {
+        return String.format("%d,%d,%d,%d,%d,%d", maxHp, attack, defense, spAttack, spDefense, speed);
+    }
+    
+    public double getEffectiveMultiplier(String moveType) {
+        return against.getOrDefault(moveType.toLowerCase(), 1.0);
     }
 
     @Override
