@@ -88,6 +88,7 @@ public class PokeBattleApp {
           case "quit":
           case "exit":
             System.out.println("Shutting down...");
+            handler.sendQuit(); 
             System.exit(0);
             break;
           default:
