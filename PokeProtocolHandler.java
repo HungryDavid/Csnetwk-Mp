@@ -128,8 +128,12 @@ public class PokeProtocolHandler {
             case "BOOST_REQUEST":
                 handleBoostRequest(message.get("arg1"));
                 break;
+            case "QUIT": 
+                handleQuit();
+                break;
             default:
                 System.out.println("[Error] Unknown command: " + command);
+                break;
         }
         printStatus();
     }
@@ -401,4 +405,20 @@ private void handleBattleSetup(String opponentName, String opponentStats, String
         System.out.print("> ");
     }
 
+    public void sendQuit() {
+        String quitMessage = buildMessage("QUIT");
+        System.out.println("[System] Notifying opponent of exit...");
+        send(quitMessage);
+        try {
+            Thread.sleep(200); 
+        } catch (InterruptedException ignored) {}
+    }
+
+    private void handleQuit() {
+        System.out.println("\n[System] Opponent has disconnected. Shutting down.");
+        transport.closeSocket(); 
+        System.exit(0);
+    }
+
 }
+
