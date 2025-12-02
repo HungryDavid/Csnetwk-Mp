@@ -134,4 +134,11 @@ public class PokeTransportLayer {
             }
         }
     }
+
+    public void closeSocket() {
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+            System.out.println("[Transport] Socket closed.");
+        }
+    }
 }
